@@ -63,6 +63,11 @@ async function bootstrap() {
       useGlobalPrefix: false,
       jsonDocumentUrl: '/docs-json',
     });
+
+    const http = app.getHttpAdapter().getInstance();
+    http.get('/', (_req: unknown, res: { redirect: (status: number, url: string) => void }) => {
+      res.redirect(302, '/docs');
+    });
   }
 
   const port = Number.parseInt(requiredEnv('PORT'), 10);
