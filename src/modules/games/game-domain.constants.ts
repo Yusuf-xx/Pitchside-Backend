@@ -1,0 +1,11 @@
+export const LIFECYCLE_OPEN = 'OPEN';
+export const LIFECYCLE_CONFIRMED = 'CONFIRMED';
+export const LIFECYCLE_CANCELLED = 'CANCELLED';
+export const LIFECYCLE_COMPLETED = 'COMPLETED';
+
+export const GENDER_WOMEN_ONLY = 'WOMEN_ONLY';
+export const GENDER_MIXED = 'MIXED';
+
+export const ATTENDANCE_PENDING = 'PENDING';
+export const ATTENDANCE_ATTENDED = 'ATTENDED';
+export const ATTENDANCE_NO_SHOW = 'NO_SHOW';

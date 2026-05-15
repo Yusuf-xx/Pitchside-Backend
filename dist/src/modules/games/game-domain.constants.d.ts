@@ -1,0 +1,9 @@
+export declare const LIFECYCLE_OPEN = "OPEN";
+export declare const LIFECYCLE_CONFIRMED = "CONFIRMED";
+export declare const LIFECYCLE_CANCELLED = "CANCELLED";
+export declare const LIFECYCLE_COMPLETED = "COMPLETED";
+export declare const GENDER_WOMEN_ONLY = "WOMEN_ONLY";
+export declare const GENDER_MIXED = "MIXED";
+export declare const ATTENDANCE_PENDING = "PENDING";
+export declare const ATTENDANCE_ATTENDED = "ATTENDED";
+export declare const ATTENDANCE_NO_SHOW = "NO_SHOW";

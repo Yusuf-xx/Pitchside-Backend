@@ -1,0 +1,515 @@
+// PITCHSIDE Phase 1 — identity, onboarding, player cards
+// Game modes stored as strings: FOOTBALL | FUTSAL | CRICKET
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  /// Bumped on password reset and logout-all to invalidate outstanding JWTs.
+  sessionVersion Int    @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  profile      Profile?
+  hostedGames  Game[]   @relation("HostedGames")
+  gameJoins    GameParticipant[]
+  turfBookings TurfBooking[]
+  tournamentRegistrations TournamentRegistration[]
+  teamMemberships         TeamMember[]
+  captainOfTeams          Team[]                  @relation("TeamCaptain")
+  notifications           Notification[]
+  trainingSettings        TrainingSettings?
+  trainingSessions        TrainingSession[]
+  gameRatingsGiven         GameTeammateRating[] @relation("GameTeammateRatingRater")
+  gameRatingsReceived      GameTeammateRating[] @relation("GameTeammateRatingSubject")
+  assignedPartnerInterests PartnerTurfInterest[] @relation("PartnerTurfInterestAssignee")
+  passwordResetTokens      PasswordResetToken[]
+  hostedConfirmedGameCount Int                    @default(0)
+  joinRestrictedUntil      DateTime?
+  squadsCaptained          Squad[]                @relation("SquadsCaptained")
+  squadMemberships         SquadMember[]
+  feedbackTagsGiven        TeammateFeedbackTag[]  @relation("FeedbackTagFrom")
+  feedbackTagsReceived     TeammateFeedbackTag[]  @relation("FeedbackTagTo")
+  seasonRecaps             PlayerSeasonRecap[]
+  attendanceAppeals        AttendanceRestrictionAppeal[]
+}
+
+model Profile {
+  id        String @id @default(cuid())
+  userId    String @unique
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  displayName String
+  photoUrl    String?
+  city        String
+  dateOfBirth DateTime?
+  ageGroup    String
+
+  primaryMode String
+
+  onboardingStep        Int     @default(0)
+  onboardingCompleted   Boolean @default(false)
+  preferredFormatsJson String?
+
+  profileModes   ProfileMode[]
+  modeIdentities ModeIdentity[]
+  playerCards    PlayerCard[]
+
+  gender                 String?
+  showWomenOnlyGames     Boolean @default(false)
+  gamesConfirmedCount    Int     @default(0)
+  gamesAttendedCount     Int     @default(0)
+  noShowCountLast30d     Int     @default(0)
+
+  /// Optional E.164 phone (e.g. +9198…) for friend lookup; unique when set.
+  phoneE164 String? @unique
+}
+
+model ProfileMode {
+  id        String  @id @default(cuid())
+  profileId String
+  profile   Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  mode      String
+
+  @@unique([profileId, mode])
+}
+
+model ModeIdentity {
+  id            String  @id @default(cuid())
+  profileId     String
+  profile       Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  mode          String
+  position      String
+  preferredFoot String?
+  skillLevel    String
+
+  @@unique([profileId, mode])
+}
+
+model PlayerCard {
+  id               String @id @default(cuid())
+  profileId        String
+  profile          Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  mode             String
+  ovr              Int
+  reputationTier   String  @default("REGULAR")
+  rarity           String  @default("STANDARD")
+
+  stats  PlayerCardStat[]
+  badges PlayerCardBadge[]
+
+  @@unique([profileId, mode])
+  @@index([mode, ovr])
+}
+
+model PlayerCardStat {
+  id     String     @id @default(cuid())
+  cardId String
+  card   PlayerCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  key    String
+  value  Int
+
+  @@unique([cardId, key])
+}
+
+model PlayerCardBadge {
+  id       String     @id @default(cuid())
+  cardId   String
+  card     PlayerCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  badgeKey String
+}
+
+model Game {
+  id                String   @id @default(cuid())
+  gameMode          String
+  title             String
+  venueName         String
+  city              String
+  startsAt          DateTime
+  spotsTotal        Int
+  spotsFilled       Int      @default(0)
+  skillLevel        String
+  priceInrPerPlayer Int      @default(0)
+  hostUserId        String?
+  host              User?    @relation("HostedGames", fields: [hostUserId], references: [id], onDelete: SetNull)
+  urgentNeedPlayers Boolean  @default(false)
+  isPublic          Boolean  @default(true)
+  formatLabel       String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  participants     GameParticipant[]
+  teammateRatings   GameTeammateRating[]
+  squadInvites      GameSquadInvite[]
+  feedbackTags      TeammateFeedbackTag[]
+
+  lifecycleState          String    @default("OPEN")
+  minPlayersToConfirm     Int       @default(2)
+  confirmDeadlineAt       DateTime?
+  footballVenueSubFormat   String?
+  genderFormat            String    @default("OPEN")
+  mixedMinWomenOnField    Int?
+  balancedTeamsJson       Json?
+  teamsVisibleToPlayers   Boolean   @default(false)
+  attendanceQrToken       String?   @unique
+  attendanceOpenedAt      DateTime?
+  winnerSide              String?
+  completedAt             DateTime?
+}
+
+model Squad {
+  id              String   @id @default(cuid())
+  name            String
+  city            String
+  captainUserId   String
+  captain         User     @relation("SquadsCaptained", fields: [captainUserId], references: [id], onDelete: Restrict)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  members         SquadMember[]
+  gameInvites     GameSquadInvite[]
+
+  @@index([city])
+  @@map("squads")
+}
+
+model SquadMember {
+  id            String   @id @default(cuid())
+  squadId       String
+  squad         Squad    @relation(fields: [squadId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  invitedPhone  String?
+  createdAt     DateTime @default(now())
+
+  @@unique([squadId, userId])
+  @@index([userId])
+  @@map("squad_members")
+}
+
+model GameSquadInvite {
+  id        String   @id @default(cuid())
+  gameId    String
+  game      Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  squadId   String
+  squad     Squad    @relation(fields: [squadId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([gameId, squadId])
+  @@index([squadId])
+  @@map("game_squad_invites")
+}
+
+model TeammateFeedbackTag {
+  id         String   @id @default(cuid())
+  gameId     String
+  game       Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  fromUserId String
+  fromUser   User     @relation("FeedbackTagFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUserId   String
+  toUser     User     @relation("FeedbackTagTo", fields: [toUserId], references: [id], onDelete: Cascade)
+  tagKey     String
+  isPositive Boolean
+  createdAt  DateTime @default(now())
+
+  @@index([gameId])
+  @@index([toUserId, isPositive, createdAt])
+  @@map("teammate_feedback_tags")
+}
+
+model PlayerRivalry {
+  id           String    @id @default(cuid())
+  userLowId    String
+  userHighId   String
+  winsForLow   Int       @default(0)
+  winsForHigh  Int       @default(0)
+  draws        Int       @default(0)
+  gamesPlayed  Int       @default(0)
+  lastPlayedAt DateTime?
+
+  @@unique([userLowId, userHighId])
+  @@index([userLowId])
+  @@index([userHighId])
+  @@map("player_rivalries")
+}
+
+model PlayerSeasonRecap {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  periodKey   String
+  payloadJson Json
+  createdAt   DateTime @default(now())
+
+  @@unique([userId, periodKey])
+  @@index([userId, createdAt])
+  @@map("player_season_recaps")
+}
+
+model AttendanceRestrictionAppeal {
+  id               String    @id @default(cuid())
+  userId           String
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  message          String
+  status           String    @default("OPEN")
+  moderatorNote    String?
+  reviewedAt       DateTime?
+  reviewedByUserId String?
+  reviewedByLabel  String?
+  createdAt        DateTime  @default(now())
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@map("attendance_restriction_appeals")
+}
+
+model GameParticipant {
+  id        String   @id @default(cuid())
+  gameId    String
+  game      Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  teamSide          String?
+  attendanceStatus  String   @default("PENDING")
+  /// Host-entered at completion: { goals?, assists?, wickets? }
+  statLineJson Json?
+
+  @@unique([gameId, userId])
+}
+
+model GameTeammateRating {
+  id              String   @id @default(cuid())
+  gameId          String
+  game            Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  raterUserId     String
+  rater           User     @relation("GameTeammateRatingRater", fields: [raterUserId], references: [id], onDelete: Cascade)
+  subjectUserId   String
+  subject         User     @relation("GameTeammateRatingSubject", fields: [subjectUserId], references: [id], onDelete: Cascade)
+  skill           Int
+  effort          Int
+  attitude        Int
+  communication   Int
+  noShow          Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([gameId, raterUserId, subjectUserId])
+  @@index([gameId])
+  @@index([subjectUserId])
+  @@map("game_teammate_ratings")
+}
+
+model Tournament {
+  id              String   @id @default(cuid())
+  name            String
+  gameMode        String
+  city            String
+  startsAt        DateTime
+  entryFeeInr     Int
+  prizeInr        Int
+  teamsRegistered Int
+  teamsCap        Int
+  format          String   @default("5v5")
+  genderFormat    String   @default("OPEN")
+  bannerImageUrl  String?
+  createdAt       DateTime @default(now())
+
+  registrations TournamentRegistration[]
+}
+
+model FeedEvent {
+  id        String   @id @default(cuid())
+  type      String
+  title     String
+  body      String
+  city      String?
+  gameMode  String?
+  createdAt DateTime @default(now())
+}
+
+model Turf {
+  id               String         @id
+  name             String
+  area             String
+  city             String
+  modes            Json
+  rating           Float
+  reviewCount      Int
+  priceInrPerHour  Int
+  partner          Boolean        @default(true)
+  availabilityNote String
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  bookings         TurfBooking[]
+
+  @@map("turfs")
+}
+
+model TurfBooking {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  turfId           String
+  turf             Turf     @relation(fields: [turfId], references: [id], onDelete: Cascade)
+  gameMode         String
+  bookingDate      String
+  slotStartsJson   Json
+  expectedPlayers  Int
+  splitPayment     Boolean  @default(false)
+  totalInr         Int
+  status           String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([userId])
+  @@map("turf_bookings")
+}
+
+model TournamentRegistration {
+  id           String     @id @default(cuid())
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  teamName     String?
+  createdAt    DateTime   @default(now())
+
+  @@unique([tournamentId, userId])
+  @@index([userId])
+  @@map("tournament_registrations")
+}
+
+model Team {
+  id            String       @id @default(cuid())
+  name          String
+  city          String
+  gameMode      String       @default("FOOTBALL")
+  kitColorHex   String?
+  wins          Int          @default(0)
+  losses        Int          @default(0)
+  draws         Int          @default(0)
+  captainUserId String
+  captain       User         @relation("TeamCaptain", fields: [captainUserId], references: [id], onDelete: Restrict)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  members       TeamMember[]
+
+  @@index([city])
+  @@map("teams")
+}
+
+model TeamMember {
+  id        String   @id @default(cuid())
+  teamId    String
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      String
+  createdAt DateTime @default(now())
+
+  @@unique([teamId, userId])
+  @@index([userId])
+  @@map("team_members")
+}
+
+model Notification {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        String    @default("GENERIC")
+  title       String
+  body        String
+  read        Boolean   @default(false)
+  readAt      DateTime?
+  actionPath  String?
+  createdAt   DateTime  @default(now())
+
+  @@index([userId, read])
+  @@index([userId, createdAt])
+  @@map("notifications")
+}
+
+model WaitlistSignup {
+  id        String   @id @default(cuid())
+  program   String
+  email     String
+  city      String?
+  createdAt DateTime @default(now())
+
+  @@unique([program, email])
+  @@index([program, createdAt])
+  @@map("waitlist_signups")
+}
+
+// Phase 11 — turf owner partner interest (sales pipeline intake)
+model PartnerTurfInterest {
+  id               String   @id @default(cuid())
+  turfName         String
+  city             String
+  contactNumber    String
+  email            String
+  status           String   @default("NEW")
+  assignedToUserId String?
+  assignedTo       User?    @relation("PartnerTurfInterestAssignee", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+  notes            String?
+  source           String   @default("WEB_FORM")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([email, turfName, city])
+  @@index([city, createdAt])
+  @@index([status])
+  @@index([assignedToUserId])
+  @@map("partner_turf_interests")
+}
+
+// Phase 9 — training check-ins, weekly totals (UTC ISO week), streaks
+model TrainingSettings {
+  id                String   @id @default(cuid())
+  userId            String   @unique
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  weeklyGoalMinutes Int      @default(300)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("training_settings")
+}
+
+model TrainingSession {
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  startedAt       DateTime  @default(now())
+  endedAt         DateTime?
+  durationMinutes Int       @default(0)
+  startLat        Float?
+  startLng        Float?
+  startAccuracyM  Float?
+
+  @@index([userId, startedAt])
+  @@index([userId, endedAt])
+  @@map("training_sessions")
+}
+
+model PasswordResetToken {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String   @unique
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
+}
